@@ -4,7 +4,7 @@ OpenAI-compatible API for Qwen's `qwen3-coder-plus` model deployed on Cloudflare
 
 ## Overview
 
-This project provides a Cloudflare Worker that acts as an OpenAI-compatible proxy for Qwen's AI models. It handles OAuth2 authentication, token management, and provides standard OpenAI API endpoints.
+This project provides a Cloudflare Worker that acts as an OpenAI-compatible proxy for Qwen's AI models form free 2000 req/day of  [QwenLM/qwen-code](https://github.com/QwenLM/qwen-code). It handles OAuth2 authentication, token management, and provides standard OpenAI API endpoints.
 
 ## Features
 
