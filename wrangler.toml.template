@@ -1,0 +1,20 @@
+name = "qwen-worker"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# --- KV Namespaces ---
+# Create this namespace with: wrangler kv namespace create "QWEN_TOKEN_CACHE"
+# Replace the id with the actual namespace ID returned
+kv_namespaces = [
+  { binding = "QWEN_TOKEN_CACHE", id = "your-kv-namespace-id-here" }
+]
+
+# --- Local Development Configuration ---
+[dev]
+ip = "0.0.0.0"
+port = 8787
+
+# --- Observability ---
+[observability.logs]
+enabled = true
