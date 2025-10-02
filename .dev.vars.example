@@ -1,0 +1,9 @@
+# Qwen OAuth Credentials
+# Get these by running: npm run auth (from qwen-code-oai-proxy)
+# Or copy from: ~/.qwen/oauth_creds.json
+QWEN_OAUTH_CREDS='{"access_token":"your-access-token-here","refresh_token":"your-refresh-token-here","token_type":"Bearer","resource_url":"portal.qwen.ai","expiry_date":1234567890123}'
+
+# Optional: API key for worker authentication
+# If you want to restrict access to your worker, set this to a random string
+# Recommended format: sk- followed by random characters
+# OPENAI_API_KEY=sk-your-secret-api-key-here

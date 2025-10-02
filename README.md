@@ -1,283 +1,153 @@
 # Qwen Cloudflare Worker
 
-A Cloudflare Worker that provides OpenAI-compatible API endpoints for Qwen's `qwen3-coder-plus` model via OAuth2 authentication.
+OpenAI-compatible API for Qwen's `qwen3-coder-plus` model deployed on Cloudflare Workers.
+
+## Overview
+
+This project provides a Cloudflare Worker that acts as an OpenAI-compatible proxy for Qwen's AI models. It handles OAuth2 authentication, token management, and provides standard OpenAI API endpoints.
 
 ## Features
 
-- 🔐 **OAuth2 Authentication** - Device flow authentication with automatic token refresh
-- 🎯 **OpenAI-Compatible API** - Drop-in replacement for OpenAI endpoints
-- 📚 **OpenAI SDK Support** - Works with official OpenAI SDKs and libraries
-- ⚡ **Cloudflare Workers** - Global edge deployment with low latency
-- 🔄 **Smart Token Caching** - Intelligent token management with KV storage
-- 🆓 **Free Tier Access** - Leverage Cloudflare's free tier
-- 📡 **Real-time Streaming** - Server-sent events for live responses
-- 🤖 **Single Model Focus** - Optimized for `qwen3-coder-plus`
-
-## Supported Model
-
-| Model ID | Description |
-|----------|-------------|
-| `qwen3-coder-plus` | Qwen's advanced coding model |
+- ✅ OpenAI-compatible API endpoints
+- ✅ OAuth2 authentication with automatic token refresh
+- ✅ Global edge deployment via Cloudflare Workers
+- ✅ Single model: `qwen3-coder-plus`
+- ✅ Streaming support
+- ✅ Token usage tracking
+- ✅ KV-based token caching
 
 ## Prerequisites
 
-1. **Qwen Account** with access to qwen3-coder-plus
-2. **Cloudflare Account** with Workers enabled
-3. **Wrangler CLI** installed (`npm install -g wrangler`)
+1. **Cloudflare Account** with Workers enabled
+2. **Qwen OAuth Credentials** from your existing authentication
+3. **Node.js** and npm installed
 
-### Step 0: Authenticate with Cloudflare
+## Deployment Guide
 
-```bash
-# Login to Cloudflare
-wrangler login
+### Step 1: Set up Cloudflare Workers
 
-# Check authentication status
-wrangler whoami
-```
+1. Install Wrangler CLI:
+   ```bash
+   npm install -g wrangler
+   # or use npx wrangler
+   ```
 
-## Setup
-
-### Step 1: Get OAuth2 Credentials
-
-Use your existing Qwen proxy authentication:
-
-```bash
-# From your qwen-code-oai-proxy directory
-npm run auth
-```
-
-Or authenticate manually and copy the credentials from `~/.qwen/oauth_creds.json`.
+2. Authenticate with Cloudflare:
+   ```bash
+   wrangler login
+   ```
 
 ### Step 2: Create KV Namespace
 
+1. Create the KV namespace for token caching:
+   ```bash
+   wrangler kv namespace create "QWEN_TOKEN_CACHE"
+   ```
+
+2. Copy the template and update with your namespace ID:
+   ```bash
+   cp wrangler.toml.template wrangler.toml
+   # Then edit wrangler.toml and replace "your-kv-namespace-id-here" with the actual ID
+   ```
+
+### Step 3: Get OAuth Credentials
+
+1. Get your Qwen OAuth credentials by logging into the Qwen CLI: [QwenLM/qwen-code](https://github.com/QwenLM/qwen-code)
+2. After successful authentication, your credentials file will be automatically created. Copy them from:
+   ```bash
+   cat ~/.qwen/oauth_creds.json
+   ```
+
+### Step 4: Set Environment Variables
+
+1. Set the OAuth credentials as a secret:
+   ```bash
+   wrangler secret put QWEN_OAUTH_CREDS
+   # Paste the JSON content when prompted
+   ```
+
+2. Optional: Set API key for worker authentication: ( recommended as endpoints will be public )
+   ```bash
+   wrangler secret put OPENAI_API_KEY
+   # Enter your desired API key (e.g., sk-your-secret-key)
+   ```
+
+### Step 5: Deploy
+
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+2. Deploy to Cloudflare Workers:
+   ```bash
+   npm run deploy
+   ```
+
+3. Note your worker URL from the deployment output.
+
+## Testing
+
+### Health Check
 ```bash
-# Create a KV namespace for token caching
-wrangler kv namespace create "QWEN_TOKEN_CACHE"
-```
-
-Note the namespace ID returned and update `wrangler.toml`:
-```toml
-kv_namespaces = [
-  { binding = "QWEN_TOKEN_CACHE", id = "your-kv-namespace-id" }
-]
-```
-
-### Step 3: Environment Setup
-
-Create a `.dev.vars` file:
-```bash
-# OAuth2 credentials JSON from Qwen authentication
-QWEN_OAUTH_CREDS='{"access_token":"...","refresh_token":"...","scope":"...","token_type":"Bearer","id_token":"...","expiry_date":...}'
-
-# Optional: API key for authentication (if not set, API is public)
-# OPENAI_API_KEY=sk-your-secret-api-key-here
-```
-
-For production, set the secrets:
-```bash
-wrangler secret put QWEN_OAUTH_CREDS
-wrangler secret put OPENAI_API_KEY  # Optional, only if you want authentication
-```
-
-### Step 4: Deploy
-
-```bash
-# Install dependencies
-npm install
-
-# Deploy to Cloudflare Workers
-npm run deploy
-
-# Or run locally for development
-npm run dev
-```
-
-## Usage Examples
-
-### OpenAI SDK (Python)
-```python
-from openai import OpenAI
-
-# Initialize with your worker endpoint
-client = OpenAI(
-    base_url='https://your-worker.workers.dev/v1',
-    api_key='sk-your-secret-api-key-here'  # Use your OPENAI_API_KEY if authentication is enabled
-)
-
-# Chat completion
-response = client.chat.completions.create(
-    model='qwen3-coder-plus',
-    messages=[
-        {'role': 'user', 'content': 'Write a Python function to calculate fibonacci'}
-    ],
-    stream=True
-)
-
-for chunk in response:
-    if chunk.choices[0].delta.content:
-        print(chunk.choices[0].delta.content, end='')
-```
-
-### cURL
-```bash
-curl -X POST https://your-worker.workers.dev/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer sk-your-secret-api-key-here" \
-  -d '{
-    "model": "qwen3-coder-plus",
-    "messages": [
-      {"role": "user", "content": "Explain quantum computing"}
-    ]
-  }'
-```
-
-### Raw JavaScript
-```javascript
-const response = await fetch('https://your-worker.workers.dev/v1/chat/completions', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'Authorization': 'Bearer sk-your-secret-api-key-here'
-  },
-  body: JSON.stringify({
-    model: 'qwen3-coder-plus',
-    messages: [
-      { role: 'user', content: 'Hello, world!' }
-    ]
-  })
-});
-
-const result = await response.json();
-console.log(result.choices[0].message.content);
-```
-
-## API Endpoints
-
-### Base URL
-```
-https://your-worker.your-subdomain.workers.dev
+curl https://your-worker.workers.dev/health
 ```
 
 ### List Models
-```http
-GET /v1/models
+```bash
+curl https://your-worker.workers.dev/v1/models
 ```
 
-### Chat Completions
-```http
-POST /v1/chat/completions
-Content-Type: application/json
-
-{
-  "model": "qwen3-coder-plus",
-  "messages": [
-    {
-      "role": "user",
-      "content": "Write a sorting algorithm"
-    }
-  ],
-  "stream": true
-}
+### Chat Completion
+```bash
+curl -X POST https://your-worker.workers.dev/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen3-coder-plus",
+    "messages": [{"role": "user", "content": "Write hello world in Python"}]
+  }'
 ```
 
-### Debug Endpoints
-
-#### Token Cache Status
-```http
-GET /v1/debug/token
+### With API Key Authentication
+```bash
+curl -X POST https://your-worker.workers.dev/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-your-api-key" \
+  -d '{
+    "model": "qwen3-coder-plus",
+    "messages": [{"role": "user", "content": "Explain recursion"}]
+  }'
 ```
 
-#### Authentication Test
-```http
-GET /v1/debug/auth/test
-```
+## Local Development
 
-#### Initiate Device Flow
-```http
-POST /v1/debug/auth/initiate
-```
+See `LOCAL_DEVELOPMENT.md` for detailed local setup instructions.
 
-#### Poll for Token
-```http
-POST /v1/debug/auth/poll
-```
+## API Endpoints
 
-## Configuration
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+| `/v1/models` | GET | List available models |
+| `/v1/chat/completions` | POST | Create chat completion |
+| `/v1/debug/token` | GET | Token cache status (dev only) |
+| `/v1/debug/auth/test` | GET | Authentication test (dev only) |
 
-### Environment Variables
+## Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `QWEN_OAUTH_CREDS` | ✅ | OAuth2 credentials JSON string |
-| `OPENAI_API_KEY` | ❌ | API key for authentication. If not set, the API is public. |
-
-### Authentication Security
-
-- When `OPENAI_API_KEY` is set, all `/v1/*` endpoints require authentication.
-- Clients must include the header: `Authorization: Bearer <your-api-key>`.
-- Without this environment variable, the API is publicly accessible.
-- Recommended format: `sk-` followed by a random string.
-
-## Architecture
-
-The worker acts as a translation layer, handling OAuth2 authentication and caching access tokens in Cloudflare KV for performance.
-
-```
-Client Request → Cloudflare Worker → Qwen API → Worker Response
-```
-
-### Token Management
-
-- **Environment Storage**: Permanent OAuth credentials (including refresh token)
-- **KV Storage**: Temporary access token caching (1-hour expiry with automatic refresh)
-- **Auto-Refresh**: Seamless token renewal when access tokens expire
+| `QWEN_OAUTH_CREDS` | ✅ | OAuth credentials JSON string |
+| `OPENAI_API_KEY` | ❌ | API key for authentication |
 
 ## Troubleshooting
 
 ### Common Issues
 
-**401 Authentication Error**
-- Check if your OAuth credentials are valid
-- Ensure the refresh token is working
-- Verify the credentials format matches exactly
-
-**Token Refresh Failed**
-- Credentials might be expired
-- Refresh token might be revoked
-- Check the debug cache endpoint for token status
+- **KV Namespace Not Found**: Ensure you've created the KV namespace and updated `wrangler.toml`
+- **OAuth Credentials Invalid**: Verify your credentials are properly formatted and not expired
+- **Deployment Fails**: Check Cloudflare account permissions and Wrangler authentication
 
 ### Debug Commands
 
-```bash
-# Check KV cache status
-curl https://your-worker.workers.dev/v1/debug/token
-
-# Test authentication
-curl https://your-worker.workers.dev/v1/debug/auth/test
-
-# Check worker health
-curl https://your-worker.workers.dev/health
-```
-
-## Development
-
-```bash
-# Install dependencies
-npm install
-
-# Run locally
-npm run dev
-
-# Deploy to production
-npm run deploy
-
-# Check types
-npm run tsc
-
-# Lint code
-npm run lint
-```
-
-## License
-
-This project is based on the qwen-code-oai-proxy and adapted for Cloudflare Workers.
+For local development, see the debug tools in `LOCAL_DEVELOPMENT.md`.
