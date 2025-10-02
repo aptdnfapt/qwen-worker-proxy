@@ -69,3 +69,6 @@ wrangler.toml.bak
 
 # Do not commit wrangler.toml with real KV namespace IDs
 wrangler.toml
+
+# Reference repositories
+qwen-code-oai-proxy/
