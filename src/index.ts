@@ -4,7 +4,7 @@ import { OpenAIRoute } from './routes/openai';
 import { DebugRoute } from './routes/debug';
 
 /**
- * Qwen Worker - OpenAI-Compatible Proxy for Qwen Models
+ * Qwen Worker Proxy - OpenAI-Compatible Proxy for Qwen Models
  *
  * A Cloudflare Worker that provides OpenAI-compatible API endpoints
  * for Qwen's models via OAuth2 authentication.
@@ -84,7 +84,7 @@ app.get('/', (c) => {
 	const requiresAuth = !!c.env.OPENAI_API_KEY;
 
 	return c.json({
-		name: 'Qwen Worker',
+		name: 'Qwen Worker Proxy',
 		description: 'OpenAI-compatible API for Qwen models via OAuth2',
 		version: '1.0.0',
 		authentication: {

@@ -1,4 +1,4 @@
-# Qwen Cloudflare Worker
+# Qwen Worker Proxy
 
 OpenAI-compatible API for Qwen's `qwen3-coder-plus` model deployed on Cloudflare Workers.
 

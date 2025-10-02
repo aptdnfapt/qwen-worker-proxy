@@ -1,5 +1,5 @@
 {
-  "name": "qwen-worker",
+  "name": "qwen-worker-proxy",
   "version": "1.0.0",
   "description": "Qwen OpenAI-compatible Cloudflare Worker proxy",
   "main": "src/index.ts",
