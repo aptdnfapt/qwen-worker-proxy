@@ -150,7 +150,43 @@ app.get('/admin/health', async (c) => {
 		const errorAccounts = accountsHealth.filter(a => a.status === 'error').length;
 		const missingCredentialsAccounts = accountsHealth.filter(a => a.status === 'missing_credentials').length;
 
-		return c.json({
+		// Generate pretty ASCII table for accounts
+		const accountsTable = accountsHealth.map(account => {
+			const statusIcon = account.status === 'healthy' ? '✅' : 
+			                 account.status === 'quota_exceeded' ? '⚠️' : 
+			                 account.status === 'error' ? '❌' : '❓';
+			
+			const failedIcon = account.isFailed ? '🚫' : '✓';
+			const errorText = account.error ? account.error.substring(0, 50) + (account.error.length > 50 ? '...' : '') : 'None';
+			
+			return `│ ${account.account.padEnd(30)} │ ${statusIcon} ${account.status.padEnd(18)} │ ${account.expiresIn.padEnd(10)} │ ${failedIcon} ${String(account.apiStatus || 'N/A').padEnd(4)} │`;
+		}).join('\n');
+
+		const prettyOutput = `
+╔══════════════════════════════════════════════════════════════════╗
+║                    🏥 QWEN MULTI-ACCOUNT HEALTH CHECK              ║
+╠══════════════════════════════════════════════════════════════════╣
+║ 📊 SUMMARY                                                         ║
+╟────────────────────────────────────────────────────────────────────╢
+║ Total Accounts:      ${totalAccounts.toString().padEnd(40)} ║
+║ ✅ Healthy:           ${healthyAccounts.toString().padEnd(40)} ║
+║ ❌ Error:              ${errorAccounts.toString().padEnd(40)} ║
+║ ⚠️  Quota Exceeded:    ${quotaExceededAccounts.toString().padEnd(40)} ║
+║ ❓ Missing Creds:      ${missingCredentialsAccounts.toString().padEnd(40)} ║
+║ 🚫 Failed Today:      ${failedAccountsCount.toString().padEnd(40)} ║
+║ Failed Accounts List: ${(failedAccounts.length > 0 ? failedAccounts.join(', ') : 'None').padEnd(40)} ║
+╟────────────────────────────────────────────────────────────────────╢
+║ 📋 ACCOUNT STATUS DETAILS                                            ║
+╟────────────────────────────────────────────────────────────────────╢
+│ Account                         │ Status              │ Expires In │ API │
+╠══════════════════════════════════════════════════════════════════╣
+${accountsTable}
+╚══════════════════════════════════════════════════════════════════╝
+🕒 Last Updated: ${new Date().toISOString()}
+🔧 Proxy-based health check (tests exact same path as users)`.trim();
+
+		// Return JSON for API consumers
+		const jsonResponse = {
 			summary: {
 				total_accounts: totalAccounts,
 				healthy_accounts: healthyAccounts,
@@ -162,14 +198,42 @@ app.get('/admin/health', async (c) => {
 			},
 			accounts: accountsHealth,
 			timestamp: new Date().toISOString()
-		});
+		};
+
+		// Check if request wants pretty text output
+		const acceptHeader = c.req.header('Accept') || '';
+		const userAgent = c.req.header('User-Agent') || '';
+		
+		// Return pretty text for curl/browsers, JSON for API consumers
+		if (acceptHeader.includes('text/plain') || userAgent.includes('curl') || !acceptHeader.includes('application/json')) {
+			c.header('Content-Type', 'text/plain; charset=utf-8');
+			return c.body(prettyOutput);
+		} else {
+			return c.json(jsonResponse);
+		}
 	} catch (error) {
 		console.error('Health check failed:', error);
-		return c.json({
-			error: 'Health check failed',
-			message: error instanceof Error ? error.message : 'Unknown error',
-			timestamp: new Date().toISOString()
-		}, 500);
+		const errorOutput = `
+╔══════════════════════════════════════════════════════════════════╗
+║                         ❌ HEALTH CHECK FAILED                    ║
+╠══════════════════════════════════════════════════════════════════╣
+║ Error: ${error instanceof Error ? error.message : 'Unknown error'.padEnd(56)} ║
+║ Time:  ${new Date().toISOString().padEnd(56)} ║
+╚══════════════════════════════════════════════════════════════════╝`.trim();
+		
+		const acceptHeader = c.req.header('Accept') || '';
+		const userAgent = c.req.header('User-Agent') || '';
+		
+		if (acceptHeader.includes('text/plain') || userAgent.includes('curl') || !acceptHeader.includes('application/json')) {
+			c.header('Content-Type', 'text/plain; charset=utf-8');
+			return c.body(errorOutput, 500);
+		} else {
+			return c.json({
+				error: 'Health check failed',
+				message: error instanceof Error ? error.message : 'Unknown error',
+				timestamp: new Date().toISOString()
+			}, 500);
+		}
 	}
 });
 

@@ -9,6 +9,7 @@ export class MultiAccountAuthManager {
 	private env: Env;
 	private selectedAccount: string | null = null;
 	private selectedCredentials: OAuth2Credentials | null = null;
+	private forcedAccount: string | null = null; // For health checks
 
 	constructor(env: Env) {
 		this.env = env;
@@ -227,6 +228,24 @@ export class MultiAccountAuthManager {
 	}
 
 	/**
+	 * Force selection of a specific account (for health checks)
+	 */
+	public forceSelectAccount(accountId: string): void {
+		this.forcedAccount = accountId;
+		this.selectedAccount = null;
+		this.selectedCredentials = null;
+	}
+
+	/**
+	 * Clear forced account and restore normal selection
+	 */
+	public clearForcedAccount(): void {
+		this.forcedAccount = null;
+		this.selectedAccount = null;
+		this.selectedCredentials = null;
+	}
+
+	/**
 	 * Initialize authentication and select best account
 	 */
 	public async initializeAuth(): Promise<void> {
@@ -238,11 +257,22 @@ export class MultiAccountAuthManager {
 				return;
 			}
 		}
-
-		// Select best account
-		const selection = await this.selectBestAccount();
-		if (!selection) {
-			throw new Error('No valid accounts available. All accounts may be failed or expired.');
+		
+		let selection;
+		if (this.forcedAccount) {
+			// Use forced account for health checks
+			console.log(`Using forced account: ${this.forcedAccount}`);
+			const forcedCredentials = await this.loadAccountCredentials(this.forcedAccount);
+			if (!forcedCredentials) {
+				throw new Error(`Forced account ${this.forcedAccount} not found in KV storage`);
+			}
+			selection = { accountId: this.forcedAccount, credentials: forcedCredentials };
+		} else {
+			// Select best account normally
+			selection = await this.selectBestAccount();
+			if (!selection) {
+				throw new Error('No valid accounts available. All accounts may be failed or expired.');
+			}
 		}
 
 		// Handle expired accounts with proactive refresh
@@ -408,63 +438,101 @@ export class MultiAccountAuthManager {
 	}
 
 	/**
-	 * Get health status of all accounts
+	 * Get health status of all accounts using the actual proxy logic
 	 */
 	public async getAccountsHealth(): Promise<AccountHealth[]> {
 		const allAccountIds = await this.getAllAccountIds();
 		const failedAccounts = await this.getFailedAccounts();
 		const results: AccountHealth[] = [];
 
+		console.log(`Starting health check for ${allAccountIds.length} accounts using proxy logic...`);
+
+		// Test each account through the actual proxy
 		for (const accountId of allAccountIds) {
-			const credentials = await this.getHealthCheckCredentials(accountId);
-			if (!credentials) {
+			console.log(`Testing account: ${accountId}`);
+			
+			// Force the auth manager to use this specific account
+			this.forceSelectAccount(accountId);
+			
+			try {
+				// Get initial credentials info
+				const credentials = await this.loadAccountCredentials(accountId);
+				if (!credentials) {
+					results.push({
+						account: accountId,
+						status: 'missing_credentials',
+						error: 'No credentials found',
+						expiresIn: 'unknown',
+						isFailed: failedAccounts.includes(accountId)
+					});
+					continue;
+				}
+
+				const isExpired = credentials.expiry_date < Date.now();
+				const expiresIn = isExpired ? 'expired' : `${Math.floor((credentials.expiry_date - Date.now()) / 60000)} min`;
+
+				// Test through the actual proxy using QwenAPIClient
+				console.log(`Testing ${accountId} through proxy...`);
+				const { QwenAPIClient } = await import('./qwen-client');
+				const client = new QwenAPIClient(this.env);
+				
+				const testRequest = {
+					model: 'qwen3-coder-plus',
+					messages: [{ role: 'user', content: 'hi' }],
+					max_tokens: 5
+				};
+
+				await client.chatCompletions(testRequest);
+				
+				// If we get here, the request succeeded
 				results.push({
 					account: accountId,
-					status: 'missing_credentials',
-					error: 'No credentials found',
-					expiresIn: 'unknown',
-					isFailed: failedAccounts.includes(accountId)
+					status: 'healthy',
+					error: null,
+					expiresIn,
+					isFailed: failedAccounts.includes(accountId),
+					apiStatus: 200
 				});
-				continue;
-			}
-
-			const isExpired = credentials.expiry_date < Date.now();
-			const expiresIn = isExpired ? 'expired' : `${Math.floor((credentials.expiry_date - Date.now()) / 60000)} min`;
-
-			// Make test chat completion API call to check if account actually works
-			let apiStatus = 200;
-			let apiError = null;
-
-			try {
-				const testResponse = await fetch('https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', {
-					method: 'POST',
-					headers: {
-						'Authorization': `Bearer ${credentials.access_token}`,
-						'Content-Type': 'application/json'
-					},
-					body: JSON.stringify({
-						model: 'qwen-coder-plus',
-						messages: [{ role: 'user', content: 'hi' }],
-						max_tokens: 5
-					})
-				});
-				apiStatus = testResponse.status;
-				if (!testResponse.ok) {
-					apiError = await testResponse.text();
+				
+				console.log(`✅ ${accountId}: HEALTHY`);
+				
+			} catch (error) {
+				console.log(`❌ ${accountId}: ERROR - ${error instanceof Error ? error.message : 'Unknown error'}`);
+				
+				// Analyze error to determine status
+				let status: 'quota_exceeded' | 'error' = 'error';
+				let apiStatus = 0;
+				const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+				
+				if (errorMessage.includes('429') || errorMessage.includes('quota')) {
+					status = 'quota_exceeded';
+					apiStatus = 429;
+				} else if (errorMessage.includes('401') || errorMessage.includes('unauthorized')) {
+					apiStatus = 401;
+					status = 'error';
+				} else if (errorMessage.includes('500') || errorMessage.includes('502') || errorMessage.includes('504')) {
+					apiStatus = 500;
+					status = 'error';
 				}
-			} catch (testError) {
-				apiStatus = 0;
-				apiError = testError instanceof Error ? testError.message : 'Unknown error';
-			}
 
-			results.push({
-				account: accountId,
-				status: apiStatus === 200 ? 'healthy' : apiStatus === 429 ? 'quota_exceeded' : 'error',
-				error: apiError,
-				expiresIn,
-				isFailed: failedAccounts.includes(accountId),
-				apiStatus
-			});
+				// Get expiry time for failed accounts too
+				const credentials = await this.loadAccountCredentials(accountId);
+				const expiresIn = credentials ? 
+					(credentials.expiry_date < Date.now() ? 'expired' : `${Math.floor((credentials.expiry_date - Date.now()) / 60000)} min`) 
+					: 'unknown';
+
+				results.push({
+					account: accountId,
+					status,
+					error: errorMessage,
+					expiresIn,
+					isFailed: failedAccounts.includes(accountId),
+					apiStatus
+				});
+			} finally {
+				// Clear forced account for next iteration
+				this.clearForcedAccount();
+			}
 		}
 
 		return results;
