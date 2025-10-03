@@ -9,10 +9,21 @@
     "build": "wrangler deploy --dry-run --outdir=dist",
     "lint": "eslint --ext .ts src",
     "lint:fix": "eslint --ext .ts src --fix",
-    "tsc": "tsc --noEmit --skipLibCheck"
+    "tsc": "tsc --noEmit --skipLibCheck",
+    "auth:add": "node authenticate.js add",
+    "auth:list": "node authenticate.js list",
+    "auth:remove": "node authenticate.js remove",
+    "setup:deploy": "node setup-accounts.js deploy",
+    "setup:deploy-all": "node setup-accounts.js deploy-all",
+    "setup:list-kv": "node setup-accounts.js list-kv",
+    "setup:remove-kv": "node setup-accounts.js remove-kv",
+    "setup:health": "node setup-accounts.js health"
   },
   "dependencies": {
-    "hono": "^4.9.2"
+    "hono": "^4.9.2",
+    "open": "^8.4.2",
+    "qrcode-terminal": "^0.12.0",
+    "toml": "^3.0.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250816.0",

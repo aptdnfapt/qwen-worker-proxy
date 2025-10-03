@@ -72,3 +72,4 @@ wrangler.toml
 
 # Reference repositories
 qwen-code-oai-proxy/
+.qwen
