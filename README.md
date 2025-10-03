@@ -83,6 +83,21 @@ npm run setup:list-kv
 
 ### Step 4: Set Environment Variables
 
+**Easy way - Using .env file:**
+
+1. Create and edit `.env` file:
+   ```bash
+   cp .env.example .env
+   nano .env  # Edit with your values
+   ```
+
+2. Update all secrets at once:
+   ```bash
+   npm run secrets:update
+   ```
+
+**Manual way:**
+
 1. Set API keys for authentication (comma-separated for multiple keys):
    ```bash
    wrangler secret put OPENAI_API_KEYS
@@ -94,6 +109,11 @@ npm run setup:list-kv
    wrangler secret put ADMIN_SECRET_KEY
    # Enter your admin secret key
    ```
+
+**Verify secrets:**
+```bash
+npm run secrets:list
+```
 
 ### Step 5: Deploy Worker
 
@@ -158,6 +178,10 @@ npm run setup:remove-kv <account-id> # Remove account from KV
 
 # Health Check
 npm run setup:health              # Check status of all accounts
+
+# Secrets Management
+npm run secrets:update            # Update all secrets from .env file
+npm run secrets:list              # List all configured secrets
 ```
 
 ### Admin Health Check

@@ -22,7 +22,9 @@
     "setup:remove-kv": "node setup-accounts.js remove-kv",
     "setup:remove-kv-dev": "node setup-accounts.js remove-kv --dev",
     "setup:health": "node setup-accounts.js health",
-    "setup:health-dev": "node setup-accounts.js health --dev"
+    "setup:health-dev": "node setup-accounts.js health --dev",
+    "secrets:update": "node manage-secrets.js",
+    "secrets:list": "node manage-secrets.js list"
   },
   "dependencies": {
     "hono": "^4.9.2",
