@@ -1,4 +1,5 @@
 import { Env, OAuth2Credentials } from './types';
+import { QWEN_OAUTH_CLIENT_ID } from './config';
 
 /**
  * Multi-account authentication manager for Qwen API.
@@ -18,11 +19,15 @@ export class MultiAccountAuthManager {
 	 */
 	private async getAllAccountIds(): Promise<string[]> {
 		try {
+			console.log('DEBUG: Attempting to list accounts with prefix ACCOUNT:');
 			// List all keys with ACCOUNT: prefix
 			const list = await this.env.QWEN_TOKEN_CACHE.list({ prefix: 'ACCOUNT:' });
-			return list.keys.map(key => key.name.replace('ACCOUNT:', ''));
+			console.log('DEBUG: KV list result:', JSON.stringify(list));
+			const accountIds = list.keys.map(key => key.name.replace('ACCOUNT:', ''));
+			console.log('DEBUG: Extracted account IDs:', accountIds);
+			return accountIds;
 		} catch (error) {
-			console.error('Failed to list accounts:', error);
+			console.error('DEBUG: Failed to list accounts:', error);
 			return [];
 		}
 	}
@@ -108,7 +113,7 @@ export class MultiAccountAuthManager {
 			body: new URLSearchParams({
 				grant_type: 'refresh_token',
 				refresh_token: refreshToken,
-				client_id: 'f0304373b74a44d2b584a3fb70ca9e56',
+				client_id: QWEN_OAUTH_CLIENT_ID,
 			}),
 		});
 
@@ -380,6 +385,29 @@ export class MultiAccountAuthManager {
 	}
 
 	/**
+	 * Get properly refreshed credentials for health check
+	 */
+	private async getHealthCheckCredentials(accountId: string): Promise<OAuth2Credentials | null> {
+		const rawCredentials = await this.loadAccountCredentials(accountId);
+		if (!rawCredentials) {
+			return null;
+		}
+
+		// Handle expired tokens with refresh (same logic as main selection)
+		if (rawCredentials.expiry_date < Date.now()) {
+			console.log(`Health check: Account ${accountId} has expired token, attempting refresh...`);
+			try {
+				return await this.refreshAccountToken(accountId, rawCredentials.refresh_token);
+			} catch (refreshError) {
+				console.log(`Health check: Refresh failed for ${accountId}, using expired token for test`);
+				return rawCredentials; // Return expired token - the test will fail appropriately
+			}
+		}
+
+		return rawCredentials;
+	}
+
+	/**
 	 * Get health status of all accounts
 	 */
 	public async getAccountsHealth(): Promise<AccountHealth[]> {
@@ -388,7 +416,7 @@ export class MultiAccountAuthManager {
 		const results: AccountHealth[] = [];
 
 		for (const accountId of allAccountIds) {
-			const credentials = await this.loadAccountCredentials(accountId);
+			const credentials = await this.getHealthCheckCredentials(accountId);
 			if (!credentials) {
 				results.push({
 					account: accountId,
@@ -403,16 +431,22 @@ export class MultiAccountAuthManager {
 			const isExpired = credentials.expiry_date < Date.now();
 			const expiresIn = isExpired ? 'expired' : `${Math.floor((credentials.expiry_date - Date.now()) / 60000)} min`;
 
-			// Make test API call to check if account actually works
+			// Make test chat completion API call to check if account actually works
 			let apiStatus = 200;
 			let apiError = null;
 
 			try {
-				const testResponse = await fetch('https://dashscope.aliyuncs.com/compatible-mode/v1/models', {
+				const testResponse = await fetch('https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', {
+					method: 'POST',
 					headers: {
 						'Authorization': `Bearer ${credentials.access_token}`,
 						'Content-Type': 'application/json'
-					}
+					},
+					body: JSON.stringify({
+						model: 'qwen-coder-plus',
+						messages: [{ role: 'user', content: 'hi' }],
+						max_tokens: 5
+					})
 				});
 				apiStatus = testResponse.status;
 				if (!testResponse.ok) {

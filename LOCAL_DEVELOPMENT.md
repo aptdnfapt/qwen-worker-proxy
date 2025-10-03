@@ -67,15 +67,37 @@ wrangler kv namespace create "QWEN_TOKEN_CACHE"
 # Update wrangler.toml with your returned ID
 ```
 
+#### Multi-Account Setup
+
+If you're using the multi-account system (new default), you need to deploy accounts to both local and production KV:
+
+```bash
+# Deploy accounts to LOCAL KV for development
+npm run setup:deploy-all-dev
+
+# Check local KV accounts
+npm run setup:list-kv-dev
+
+# Deploy accounts to PRODUCTION KV for live deployment  
+npm run setup:deploy-all
+
+# Check production KV accounts
+npm run setup:list-kv
+```
+
 ## Running Locally
 
 ### Development Server
 
 ```bash
+# Make sure you have deployed accounts to local KV first
+npm run setup:deploy-all-dev
+
+# Start the development server
 npm run dev
 ```
 
-This starts the worker on `http://localhost:8787` with hot reloading.
+This starts the worker on `http://localhost:8787` with hot reloading using local KV storage.
 
 ### Testing Local Endpoints
 
@@ -86,47 +108,65 @@ curl http://localhost:8787/health
 # List models
 curl http://localhost:8787/v1/models
 
-# Chat completion (without auth)
+# Chat completion (using multi-account system)
 curl -X POST http://localhost:8787/v1/chat/completions \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer test-key" \
   -d '{
     "model": "qwen3-coder-plus",
-    "messages": [{"role": "user", "content": "Hello"}]
+    "messages": [{"role": "user", "content": "Hello"}],
+    "max_tokens": 50
   }'
 
-# Chat completion (with auth if OPENAI_API_KEY is set)
-curl -X POST http://localhost:8787/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer sk-your-api-key" \
-  -d '{
-    "model": "qwen3-coder-plus",
-    "messages": [{"role": "user", "content": "Write hello world"}]
-  }'
+# Admin health check (requires ADMIN_SECRET_KEY in .dev.vars)
+curl -X GET http://localhost:8787/admin/health \
+  -H "Authorization: Bearer admin-secret-123"
 ```
 
-## Debug Tools
+## Account Management
 
-### Token Cache Status
+### Local KV Management (Development)
 ```bash
-curl http://localhost:8787/v1/debug/token
+# List accounts in local KV
+npm run setup:list-kv-dev
+
+# Deploy single account to local KV
+npm run setup:deploy-dev <account-id>
+
+# Remove account from local KV
+npm run setup:remove-kv-dev <account-id>
+
+# Health check local accounts
+npm run setup:health-dev
 ```
 
-### Authentication Test
+### Production KV Management
 ```bash
-curl http://localhost:8787/v1/debug/auth/test
+# List accounts in production KV
+npm run setup:list-kv
+
+# Deploy single account to production KV
+npm run setup:deploy <account-id>
+
+# Remove account from production KV
+npm run setup:remove-kv <account-id>
+
+# Health check production accounts
+npm run setup:health
 ```
 
-### Manual OAuth Flow
-```bash
-# Initiate device flow
-curl -X POST http://localhost:8787/v1/debug/auth/initiate \
-  -H "Content-Type: application/json" \
-  -d '{}'
+## Authentication
 
-# Poll for token (use device_code from previous response)
-curl -X POST http://localhost:8787/v1/debug/auth/poll \
-  -H "Content-Type: application/json" \
-  -d '{"device_code":"your-device-code"}'
+### Add New Account Credentials
+```bash
+# Add new OAuth account
+npm run auth:add your-email@example.com
+
+# List configured accounts
+npm run auth:list
+
+# Remove account credentials
+npm run auth:remove your-email@example.com
 ```
 
 ## Common Issues
@@ -151,19 +191,55 @@ Kill any existing processes on port 8787 or use a different port:
 lsof -ti:8787 | xargs kill -9
 ```
 
+### Multi-Account System Not Working
+```bash
+# Check if accounts are deployed to local KV
+npm run setup:list-kv-dev
+
+# If no accounts found, deploy them first
+npm run setup:deploy-all-dev
+
+# Check account health
+npm run setup:health-dev
+```
+
 ## Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `QWEN_OAUTH_CREDS` | ✅ | OAuth credentials JSON string |
-| `OPENAI_API_KEY` | ❌ | API key for authentication |
+| `QWEN_OAUTH_CREDS` | ✅ | OAuth credentials JSON string (legacy single account) |
+| `OPENAI_API_KEY` | ❌ | API key for authentication (legacy) |
+| `ADMIN_SECRET_KEY` | ❌ | Admin secret for health monitoring |
 
 ## Production vs Development
 
-- **Development**: Uses local KV namespace, runs on localhost
-- **Production**: Uses production KV namespace, runs on Cloudflare's edge
-
-To deploy to production:
+### Local Development Commands ✨ NEW
 ```bash
+# Deploy accounts to local KV
+npm run setup:deploy-all-dev
+
+# Start development server
+npm run dev
+```
+
+### Production Deployments
+```bash
+# Deploy accounts to production KV (default)
+npm run setup:deploy-all
+
+# Deploy worker to production  
 npm run deploy
+```
+
+### Key Differences
+- **Development**: Uses local KV namespace, runs on localhost with `-dev` commands
+- **Production**: Uses production KV namespace (default), runs on Cloudflare's edge
+
+### Quick Deployment Workflow
+```bash
+# Development
+npm run setup:deploy-all-dev && npm run dev
+
+# Production  
+npm run setup:deploy-all && npm run deploy
 ```

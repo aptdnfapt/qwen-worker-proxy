@@ -15,9 +15,14 @@
     "auth:remove": "node authenticate.js remove",
     "setup:deploy": "node setup-accounts.js deploy",
     "setup:deploy-all": "node setup-accounts.js deploy-all",
+    "setup:deploy-dev": "node setup-accounts.js deploy --dev",
+    "setup:deploy-all-dev": "node setup-accounts.js deploy-all --dev",
     "setup:list-kv": "node setup-accounts.js list-kv",
+    "setup:list-kv-dev": "node setup-accounts.js list-kv --dev",
     "setup:remove-kv": "node setup-accounts.js remove-kv",
-    "setup:health": "node setup-accounts.js health"
+    "setup:remove-kv-dev": "node setup-accounts.js remove-kv --dev",
+    "setup:health": "node setup-accounts.js health",
+    "setup:health-dev": "node setup-accounts.js health --dev"
   },
   "dependencies": {
     "hono": "^4.9.2",

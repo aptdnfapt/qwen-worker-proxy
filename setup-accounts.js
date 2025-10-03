@@ -34,7 +34,7 @@ class SetupAccounts {
     return config.kv_namespaces[0].id;
   }
 
-  async deployAccount(accountId) {
+  async deployAccount(accountId, isRemote = false) {
     console.log(`Deploying account ${accountId} to KV storage...`);
     
     const credsPath = path.join(this.qwenDir, `oauth_creds_${accountId}.json`);
@@ -44,7 +44,8 @@ class SetupAccounts {
       const kvNamespaceId = await this.getKvNamespaceId();
       
       // Store credentials in KV
-      const command = `wrangler kv key put "ACCOUNT:${accountId}" '${JSON.stringify(credentials)}' --namespace-id="${kvNamespaceId}"`;
+      const remoteFlag = isRemote ? '--remote' : '';
+      const command = `wrangler kv key put "ACCOUNT:${accountId}" '${JSON.stringify(credentials)}' --namespace-id="${kvNamespaceId}" ${remoteFlag}`;
       console.log(`Executing: ${command}`);
       
       execSync(command, { stdio: 'inherit' });
@@ -58,7 +59,7 @@ class SetupAccounts {
     }
   }
 
-  async deployAllAccounts() {
+  async deployAllAccounts(isRemote = false) {
     console.log('Deploying all accounts to KV storage...');
     
     try {
@@ -83,7 +84,7 @@ class SetupAccounts {
       
       for (const file of accountFiles) {
         const accountId = file.replace('oauth_creds_', '').replace('.json', '');
-        await this.deployAccount(accountId);
+        await this.deployAccount(accountId, isRemote);
       }
       
       console.log('\n🎉 All accounts deployed successfully!');
@@ -93,14 +94,15 @@ class SetupAccounts {
     }
   }
 
-  async listKvAccounts() {
+  async listKvAccounts(isRemote = false) {
     console.log('Listing accounts in KV storage...');
     
     try {
       const kvNamespaceId = await this.getKvNamespaceId();
       
       // List all keys with ACCOUNT: prefix
-      const command = `wrangler kv key list --namespace-id="${kvNamespaceId}" --prefix="ACCOUNT:"`;
+      const remoteFlag = isRemote ? '--remote' : '';
+      const command = `wrangler kv key list --namespace-id="${kvNamespaceId}" --prefix="ACCOUNT:" ${remoteFlag}`;
       console.log(`Executing: ${command}`);
       
       const output = execSync(command, { encoding: 'utf8' });
@@ -121,13 +123,14 @@ class SetupAccounts {
     }
   }
 
-  async removeKvAccount(accountId) {
+  async removeKvAccount(accountId, isRemote = false) {
     console.log(`Removing account ${accountId} from KV storage...`);
     
     try {
       const kvNamespaceId = await this.getKvNamespaceId();
       
-      const command = `wrangler kv key delete "ACCOUNT:${accountId}" --namespace-id="${kvNamespaceId}"`;
+      const remoteFlag = isRemote ? '--remote' : '';
+      const command = `wrangler kv key delete "ACCOUNT:${accountId}" --namespace-id="${kvNamespaceId}" ${remoteFlag}`;
       console.log(`Executing: ${command}`);
       
       execSync(command, { stdio: 'inherit' });
@@ -138,14 +141,15 @@ class SetupAccounts {
     }
   }
 
-  async healthCheck() {
+  async healthCheck(isRemote = false) {
     console.log('Performing health check on all accounts in KV storage...');
     
     try {
       const kvNamespaceId = await this.getKvNamespaceId();
       
       // Get all account keys
-      const listCommand = `wrangler kv key list --namespace-id="${kvNamespaceId}" --prefix="ACCOUNT:"`;
+      const remoteFlag = isRemote ? '--remote' : '';
+      const listCommand = `wrangler kv key list --namespace-id="${kvNamespaceId}" --prefix="ACCOUNT:" ${remoteFlag}`;
       const output = execSync(listCommand, { encoding: 'utf8' });
       
       if (!output.trim()) {
@@ -241,6 +245,8 @@ async function main() {
   const args = process.argv.slice(2);
   const command = args[0];
   const accountId = args[1];
+  // Default to production (remote), use --dev for local development
+const isRemote = !args.includes('--dev');
   
   const setup = new SetupAccounts();
   
@@ -248,18 +254,18 @@ async function main() {
     switch (command) {
       case 'deploy':
         if (!accountId) {
-          console.error('Please provide an account ID: node setup-accounts.js deploy <account-id>');
+          console.error('Please provide an account ID: node setup-accounts.js deploy <account-id> [--dev]');
           process.exit(1);
         }
-        await setup.deployAccount(accountId);
+        await setup.deployAccount(accountId, isRemote);
         break;
         
       case 'deploy-all':
-        await setup.deployAllAccounts();
+        await setup.deployAllAccounts(isRemote);
         break;
         
       case 'list-kv':
-        await setup.listKvAccounts();
+        await setup.listKvAccounts(isRemote);
         break;
         
       case 'remove-kv':
@@ -267,20 +273,21 @@ async function main() {
           console.error('Please provide an account ID: node setup-accounts.js remove-kv <account-id>');
           process.exit(1);
         }
-        await setup.removeKvAccount(accountId);
+        await setup.removeKvAccount(accountId, isRemote);
         break;
         
       case 'health':
-        await setup.healthCheck();
+        await setup.healthCheck(isRemote);
         break;
         
       default:
-        console.log('Usage: node setup-accounts.js [deploy <account-id>|deploy-all|list-kv|remove-kv <account-id>|health]');
-        console.log('  deploy <account-id>    - Deploy single account to KV storage');
-        console.log('  deploy-all             - Deploy ALL accounts from ./.qwen/ to KV');
-        console.log('  list-kv                - List accounts currently in KV storage');
-        console.log('  remove-kv <account-id> - Remove account from KV storage');
-        console.log('  health                 - Perform health check on all accounts in KV');
+        console.log('Usage: node setup-accounts.js [deploy <account-id>|deploy-all|list-kv|remove-kv <account-id>|health] [--dev]');
+        console.log('  deploy <account-id>    - Deploy single account to KV storage (production)');
+        console.log('  deploy-all             - Deploy ALL accounts from ./.qwen/ to KV (production)');
+        console.log('  list-kv                - List accounts currently in KV storage (production)');
+        console.log('  remove-kv <account-id> - Remove account from KV storage (production)');
+        console.log('  health                 - Perform health check on all accounts in KV (production)');
+        console.log('  --dev                  - Use local development KV namespace instead of production');
         process.exit(1);
     }
   } catch (error) {
