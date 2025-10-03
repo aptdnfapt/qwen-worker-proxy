@@ -31,7 +31,8 @@ Transform the current single-account worker proxy into a robust multi-account sy
 - [ ] **Type 3: Server Errors (500/502/504)** - Try different account once (NO KV write)
 - [ ] **Type 4: Other Errors** - Try different account once, then return error
 - [ ] **Max retries**: 1 attempt, then give up (avoid burning Cloudflare limits)
-- [ ] **Manual cleanup** - Admin removes failed accounts via dashboard or CLI 
+- [ ] **Automatic daily reset** - FAILED_ACCOUNTS list auto-clears at UTC midnight (lazy check)
+- [ ] **Manual cleanup** - Admin removes permanently dead accounts from KV using `setup:remove-kv` 
 
 
 
@@ -65,18 +66,20 @@ npm run auth:add myacc1
 
 ### KV Data Structure (Minimal - No Locks!)
 ```
-KEY                     VALUE                                    PURPOSE
-ACCOUNT:myacc1         {access_token, refresh_token, expiry_date} Permanent storage
-ACCOUNT:myacc2         {access_token, refresh_token, expiry_date} Permanent storage
-ACCOUNT:myacc3         {access_token, refresh_token, expiry_date} Permanent storage
-FAILED_ACCOUNTS        "myacc5,myacc8"                            Temporary failed list (manual cleanup)
+KEY                       VALUE                                    PURPOSE
+ACCOUNT:myacc1           {access_token, refresh_token, expiry_date} Permanent storage
+ACCOUNT:myacc2           {access_token, refresh_token, expiry_date} Permanent storage
+ACCOUNT:myacc3           {access_token, refresh_token, expiry_date} Permanent storage
+FAILED_ACCOUNTS          "myacc5,myacc8"                            Temporary failed list (auto-reset daily)
+LAST_FAILED_RESET_DATE   "2024-10-03"                              Tracks last daily reset (YYYY-MM-DD)
 ```
 
-**Total KV Pairs:** 1 per account + 1 for failed list
+**Total KV Pairs:** 1 per account + 2 for failed list tracking
 
 ### Account Selection Logic (Probability-Based with Proactive Refresh)
 
-**No locks, no index, no automatic resets!**
+**No locks, no index!**
+**Automatic daily reset:** FAILED_ACCOUNTS list is automatically cleared every UTC day (lazy check on first request)
 
 **Enhanced Selection Algorithm:**
 ```javascript
@@ -203,26 +206,35 @@ if (stillFails) {
 **Two types of failures:**
 
 **Type A: Quota Exceeded (429) - Temporary**
-- Added to `FAILED_ACCOUNTS` list automatically
-- **Reset manually at UTC midnight** by clearing `FAILED_ACCOUNTS` list
+- Added to `FAILED_ACCOUNTS` list automatically when quota is hit
+- **Automatically reset at UTC midnight** - system clears the list on first request of new day
 - Account still exists in KV with valid credentials
-- **Daily manual reset**: Admin clears `FAILED_ACCOUNTS` via Cloudflare dashboard or CLI
+- Will be available again the next day when quota resets
 
 **Type B: Invalid Credentials - Permanent**
 - Refresh token expired or invalid
-- **Must remove from KV**: `npm run setup:remove-kv myacc5`
-- Account is dead and cannot be recovered
+- Gets added to `FAILED_ACCOUNTS` (like Type A)
+- **Automatically reset at UTC midnight** - becomes available again
+- Will immediately fail again on next use → goes back to `FAILED_ACCOUNTS`
+- **Admin must manually remove from KV**: `npm run setup:remove-kv myacc5`
+- Account is dead and cannot be recovered automatically
 
-**Daily Reset Process (Manual):**
+**Daily Reset Process (Automatic):**
+The system automatically resets the `FAILED_ACCOUNTS` list every UTC day using a "lazy check" approach:
+- On the first request of each new UTC day, the system checks `LAST_FAILED_RESET_DATE`
+- If it's a new day, automatically clears `FAILED_ACCOUNTS` and updates the date
+- No cron jobs needed - works on Cloudflare Workers free tier
+
+**Admin Cleanup Process (Manual):**
+Use health check to identify permanently dead accounts and remove them:
 ```bash
-# Option 1: Via Cloudflare dashboard
-# Go to KV namespace → Edit FAILED_ACCOUNTS → Set to ""
-
-# Option 2: Via wrangler CLI
-wrangler kv key put "FAILED_ACCOUNTS" "" --namespace-id="e3f8b0591a9d4525ac871675632588d9"
-
-# Option 3: Use health check to identify which accounts are 429 vs dead
+# Step 1: Run health check to see which accounts are truly dead
 npm run setup:health
+
+# Step 2: Look for accounts with "refresh_failed" status (Type B)
+
+# Step 3: Remove dead accounts from KV permanently
+npm run setup:remove-kv myacc5
 ```
 
 ### Storage Analysis
@@ -425,8 +437,8 @@ async function healthCheck(env) {
 
 **What admin sees:**
 - ✅ **200**: Account working perfectly
-- ⚠️ **429**: Quota exceeded (2000 req/day limit) → Already in FAILED_ACCOUNTS, will auto-reset tomorrow
-- ❌ **refresh_failed**: Refresh token invalid → Remove from KV manually (account dead permanently)
+- ⚠️ **429**: Quota exceeded (2000 req/day limit) → In FAILED_ACCOUNTS today, will auto-reset tomorrow at UTC midnight
+- ❌ **refresh_failed**: Refresh token invalid → Remove from KV with `npm run setup:remove-kv <account>` (account dead permanently)
 
 ### Multiple API Keys Support
 ```javascript

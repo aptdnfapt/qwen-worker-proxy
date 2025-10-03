@@ -1,8 +1,15 @@
 // --- Environment Variable Typings ---
 export interface Env {
-	QWEN_OAUTH_CREDS: string; // OAuth2 credentials JSON
-	QWEN_TOKEN_CACHE: KVNamespace; // Cloudflare KV for token caching
-	OPENAI_API_KEY?: string; // Optional API key for authentication
+	// Multi-account system uses KV storage
+	QWEN_TOKEN_CACHE: KVNamespace; // Cloudflare KV for storing multiple accounts
+	
+	// API authentication (supports multiple keys)
+	OPENAI_API_KEYS?: string; // Comma-separated list of API keys
+	ADMIN_SECRET_KEY?: string; // Admin key for health check endpoint
+	
+	// Legacy support (optional)
+	OPENAI_API_KEY?: string; // Single API key (deprecated)
+	QWEN_OAUTH_CREDS?: string; // Legacy single-account OAuth credentials (deprecated)
 }
 
 // --- OAuth2 Credentials Interface ---
@@ -13,6 +20,7 @@ export interface OAuth2Credentials {
 	token_type: string;
 	id_token: string;
 	expiry_date: number;
+	resource_url?: string; // Optional custom API endpoint
 }
 
 // --- Qwen API Request/Response Types ---

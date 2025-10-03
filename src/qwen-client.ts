@@ -1,5 +1,5 @@
 import { Env, ChatCompletionRequest, ChatCompletionResponse, ModelsResponse, ChatCompletionStreamChunk, OAuth2Credentials } from './types';
-import { QwenAuthManager } from './auth';
+import { MultiAccountAuthManager } from './multi-auth';
 import { QWEN_API_BASE_URL, DEFAULT_MODEL } from './config';
 
 /**
@@ -7,10 +7,10 @@ import { QWEN_API_BASE_URL, DEFAULT_MODEL } from './config';
  * Simplified version adapted from the existing proxy for Cloudflare Workers.
  */
 export class QwenAPIClient {
-	private authManager: QwenAuthManager;
+	private authManager: MultiAccountAuthManager;
 
 	constructor(env: Env) {
-		this.authManager = new QwenAuthManager(env);
+		this.authManager = new MultiAccountAuthManager(env);
 	}
 
 	/**
@@ -44,31 +44,62 @@ export class QwenAPIClient {
 	 */
 	async chatCompletions(request: ChatCompletionRequest): Promise<ChatCompletionResponse | ReadableStream> {
 		const { model = DEFAULT_MODEL, stream = false, ...otherParams } = request;
+		let retryCount = 0;
+		const maxRetries = 1; // Allow one retry with different account
 
-		// Prepare request body for Qwen API
-		const qwenRequest = {
-			model,
-			...otherParams
-		};
+		while (retryCount <= maxRetries) {
+			try {
+				// Prepare request body for Qwen API
+				const qwenRequest = {
+					model,
+					...otherParams
+				};
 
-		// Get authenticated access token and credentials
-		await this.authManager.initializeAuth();
-		const accessToken = this.authManager.getAccessToken();
-		const credentials = this.authManager.getCurrentCredentials();
-		if (!accessToken) {
-			throw new Error('Failed to obtain access token');
+				// Get authenticated access token and credentials
+				await this.authManager.initializeAuth();
+				const accessToken = this.authManager.getAccessToken();
+				const credentials = this.authManager.getCurrentCredentials();
+				const accountId = this.authManager.getCurrentAccountId();
+				
+				if (!accessToken) {
+					throw new Error('Failed to obtain access token');
+				}
+
+				console.log(`Using account: ${accountId || 'default'}`);
+
+				// Get API endpoint from credentials
+				const apiEndpoint = await this.getApiEndpoint(credentials);
+
+				if (stream) {
+					// Handle streaming response
+					return this.handleStreamingChatCompletion(model, qwenRequest, accessToken, apiEndpoint, accountId || 'default');
+				} else {
+					// Handle non-streaming response
+					return this.handleNonStreamingChatCompletion(model, qwenRequest, accessToken, apiEndpoint, accountId || 'default');
+				}
+			} catch (error) {
+				console.log(`Chat completion attempt ${retryCount + 1} failed:`, error);
+				
+				// Handle error with account rotation
+				const errorHandling = await this.authManager.handleApiError(error, retryCount);
+				
+				if (!errorHandling.shouldRetry) {
+					throw error;
+				}
+
+				if (errorHandling.newAccount) {
+					console.log('Switching to different account for retry...');
+					const switched = await this.authManager.switchAccount();
+					if (!switched) {
+						throw new Error('No alternative accounts available for retry');
+					}
+				}
+
+				retryCount++;
+			}
 		}
 
-		// Get API endpoint from credentials
-		const apiEndpoint = await this.getApiEndpoint(credentials);
-
-		if (stream) {
-			// Handle streaming response
-			return this.handleStreamingChatCompletion(model, qwenRequest, accessToken, apiEndpoint);
-		} else {
-			// Handle non-streaming response
-			return this.handleNonStreamingChatCompletion(model, qwenRequest, accessToken, apiEndpoint);
-		}
+		throw new Error('Maximum retries exceeded');
 	}
 
 	/**
@@ -78,7 +109,8 @@ export class QwenAPIClient {
 		model: string,
 		requestBody: Record<string, unknown>,
 		accessToken: string,
-		apiEndpoint: string
+		apiEndpoint: string,
+		accountId: string
 	): Promise<ChatCompletionResponse> {
 		// Prepare payload matching the working proxy exactly
 		const payload = {
@@ -126,7 +158,8 @@ export class QwenAPIClient {
 		model: string,
 		requestBody: Record<string, unknown>,
 		accessToken: string,
-		apiEndpoint: string
+		apiEndpoint: string,
+		accountId: string
 	): Promise<ReadableStream> {
 		// Prepare payload matching the working proxy exactly
 		const payload = {
@@ -273,16 +306,18 @@ export class QwenAPIClient {
 	}
 
 	/**
-	 * Get token cache information
+	 * Get token cache information (deprecated for multi-account)
 	 */
 	async getTokenCacheInfo() {
-		return this.authManager.getCachedTokenInfo();
+		// Multi-account system manages tokens differently
+		return { message: 'Token cache info not applicable for multi-account system' };
 	}
 
 	/**
-	 * Clear token cache
+	 * Clear token cache (deprecated for multi-account)
 	 */
 	async clearTokenCache() {
-		return this.authManager.clearTokenCache();
+		// Multi-account system doesn't need cache clearing
+		console.log('Clear token cache not applicable for multi-account system');
 	}
 }

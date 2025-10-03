@@ -1,20 +1,27 @@
 # Qwen Worker Proxy
 
-OpenAI-compatible API for Qwen's `qwen3-coder-plus` model deployed on Cloudflare Workers.
+OpenAI-compatible API for Qwen's `qwen3-coder-plus` model deployed on Cloudflare Workers with **multi-account support**.
 
 ## Overview
 
-This project provides a Cloudflare Worker that acts as an OpenAI-compatible proxy for Qwen's AI models form free 2000 req/day of  [QwenLM/qwen-code](https://github.com/QwenLM/qwen-code). It handles OAuth2 authentication, token management, and provides standard OpenAI API endpoints.
+This project provides a Cloudflare Worker that acts as an OpenAI-compatible proxy for Qwen's AI models from free 2000 req/day of [QwenLM/qwen-code](https://github.com/QwenLM/qwen-code). It handles OAuth2 authentication, token management, and provides standard OpenAI API endpoints.
+
+**Multi-account support** allows you to manage multiple Qwen accounts for higher throughput and automatic failover.
 
 ## Features
 
 - ✅ OpenAI-compatible API endpoints
+- ✅ **Multi-account management** with automatic rotation
+- ✅ **Automatic daily reset** of failed accounts (no cron needed!)
+- ✅ **Intelligent account selection** based on token freshness
+- ✅ **Automatic failover** on quota exhaustion or errors
 - ✅ OAuth2 authentication with automatic token refresh
 - ✅ Global edge deployment via Cloudflare Workers
 - ✅ Single model: `qwen3-coder-plus`
 - ✅ Streaming support
 - ✅ Token usage tracking
 - ✅ KV-based token caching
+- ✅ Admin health check endpoint
 
 ## Prerequisites
 
@@ -22,14 +29,13 @@ This project provides a Cloudflare Worker that acts as an OpenAI-compatible prox
 2. **Qwen OAuth Credentials** from your existing authentication
 3. **Node.js** and npm installed
 
-## Deployment Guide
+## Quick Start (Multi-Account)
 
 ### Step 1: Set up Cloudflare Workers
 
-1. Install Wrangler CLI:
+1. Install dependencies:
    ```bash
-   npm install -g wrangler
-   # or use npx wrangler
+   npm install
    ```
 
 2. Authenticate with Cloudflare:
@@ -37,54 +43,65 @@ This project provides a Cloudflare Worker that acts as an OpenAI-compatible prox
    wrangler login
    ```
 
-### Step 2: Create KV Namespace
+### Step 2: Add Qwen Accounts
 
-1. Create the KV namespace for token caching:
-   ```bash
-   wrangler kv namespace create "QWEN_TOKEN_CACHE"
-   ```
+Add one or more Qwen accounts with QR code authentication:
 
-2. Copy the template and update with your namespace ID:
-   ```bash
-   cp wrangler.toml.template wrangler.toml
-   # Then edit wrangler.toml and replace "your-kv-namespace-id-here" with the actual ID
-   ```
+```bash
+# Add first account
+npm run auth:add account1
 
-### Step 3: Get OAuth Credentials
+# Add second account
+npm run auth:add account2
 
-1. Get your Qwen OAuth credentials by logging into the Qwen CLI: [QwenLM/qwen-code](https://github.com/QwenLM/qwen-code)
-2. After successful authentication, your credentials file will be automatically created. Copy them from:
-   ```bash
-   cat ~/.qwen/oauth_creds.json
-   ```
+# Add more accounts...
+npm run auth:add account3
+
+# List all accounts
+npm run auth:list
+```
+
+**What happens:**
+- Shows QR code for authentication
+- Auto-opens browser
+- Saves credentials to `./.qwen/oauth_creds_{accountId}.json`
+
+### Step 3: Deploy Accounts to KV
+
+Deploy your accounts to Cloudflare KV storage:
+
+```bash
+# Deploy all accounts at once
+npm run setup:deploy-all
+
+# Or deploy individually
+npm run setup:deploy account1
+
+# List accounts in KV
+npm run setup:list-kv
+```
 
 ### Step 4: Set Environment Variables
 
-1. Set the OAuth credentials as a secret:
+1. Set API keys for authentication (comma-separated for multiple keys):
    ```bash
-   wrangler secret put QWEN_OAUTH_CREDS
-   # Paste the JSON content when prompted
+   wrangler secret put OPENAI_API_KEYS
+   # Enter: sk-key1,sk-key2,sk-key3
    ```
 
-2. Optional: Set API key for worker authentication: ( recommended as endpoints will be public )
+2. Set admin secret for health check endpoint:
    ```bash
-   wrangler secret put OPENAI_API_KEY
-   # Enter your desired API key (e.g., sk-your-secret-key)
+   wrangler secret put ADMIN_SECRET_KEY
+   # Enter your admin secret key
    ```
 
-### Step 5: Deploy
+### Step 5: Deploy Worker
 
-1. Install dependencies:
-   ```bash
-   npm install
-   ```
+```bash
+npm run deploy
+```
 
-2. Deploy to Cloudflare Workers:
-   ```bash
-   npm run deploy
-   ```
-
-3. Note your worker URL from the deployment output.
+Your multi-account proxy is now live! 🎉
 
 ## Testing
 
@@ -123,22 +140,96 @@ curl -X POST https://your-worker.workers.dev/v1/chat/completions \
 
 See `LOCAL_DEVELOPMENT.md` for detailed local setup instructions.
 
+## Multi-Account Management
+
+### Account Commands
+
+```bash
+# Authentication
+npm run auth:add <account-id>     # Add new account with OAuth
+npm run auth:list                 # List all local accounts
+npm run auth:remove <account-id>  # Remove account credentials
+
+# Deployment
+npm run setup:deploy <account-id> # Deploy single account to KV
+npm run setup:deploy-all          # Deploy all accounts to KV
+npm run setup:list-kv             # List accounts in KV
+npm run setup:remove-kv <account-id> # Remove account from KV
+
+# Health Check
+npm run setup:health              # Check status of all accounts
+```
+
+### Admin Health Check
+
+Monitor all accounts via API endpoint:
+
+```bash
+curl https://your-worker.workers.dev/admin/health \
+  -H "Authorization: Bearer your-admin-secret-key"
+```
+
+**Response:**
+```json
+{
+  "summary": {
+    "total_accounts": 5,
+    "healthy_accounts": 3,
+    "failed_accounts": 2,
+    "quota_exceeded_accounts": 1
+  },
+  "accounts": [
+    {
+      "account": "account1",
+      "status": "healthy",
+      "expiresIn": "45 min"
+    },
+    {
+      "account": "account2",
+      "status": "quota_exceeded",
+      "expiresIn": "12 min"
+    }
+  ]
+}
+```
+
+### How Multi-Account Works
+
+1. **Automatic Account Selection**: Probability-based selection favors accounts with freshest tokens
+2. **Automatic Failover**: If one account fails, automatically tries another
+3. **Daily Reset**: Failed accounts automatically reset at UTC midnight (lazy check, no cron needed)
+4. **Manual Cleanup**: Permanently dead accounts must be removed manually via `setup:remove-kv`
+
+### Account Lifecycle
+
+**Quota Exhausted (429)**:
+- Added to `FAILED_ACCOUNTS` list
+- Auto-reset at UTC midnight
+- Available again next day
+
+**Dead Account (Invalid Token)**:
+- Added to `FAILED_ACCOUNTS` list
+- Auto-reset at UTC midnight
+- Fails again on next use
+- Admin removes with: `npm run setup:remove-kv <account-id>`
+
 ## API Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/health` | GET | Health check |
+| `/admin/health` | GET | Multi-account health status (requires admin key) |
 | `/v1/models` | GET | List available models |
 | `/v1/chat/completions` | POST | Create chat completion |
-| `/v1/debug/token` | GET | Token cache status (dev only) |
-| `/v1/debug/auth/test` | GET | Authentication test (dev only) |
+| `/v1/debug/token` | GET | Token info (dev only) |
 
 ## Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `QWEN_OAUTH_CREDS` | ✅ | OAuth credentials JSON string |
-| `OPENAI_API_KEY` | ❌ | API key for authentication |
+| `OPENAI_API_KEYS` | ❌ | Comma-separated API keys for authentication |
+| `ADMIN_SECRET_KEY` | ❌ | Admin key for health check endpoint |
+| `OPENAI_API_KEY` | ❌ | Single API key (legacy, deprecated) |
 
 ## Troubleshooting
 

@@ -36,10 +36,12 @@ app.use('*', async (c, next) => {
 	await next();
 });
 
-// Optional API key authentication middleware
+// Multi-API key authentication middleware
 app.use('/v1/*', async (c, next) => {
-	// If OPENAI_API_KEY is set, require authentication
-	if (c.env.OPENAI_API_KEY) {
+	// Support both new OPENAI_API_KEYS and legacy OPENAI_API_KEY
+	const apiKeys = c.env.OPENAI_API_KEYS || c.env.OPENAI_API_KEY;
+	
+	if (apiKeys) {
 		const authHeader = c.req.header('Authorization');
 		
 		if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -55,8 +57,9 @@ app.use('/v1/*', async (c, next) => {
 		}
 		
 		const providedKey = authHeader.substring(7); // Remove 'Bearer ' prefix
+		const validKeys = apiKeys.split(',').map(key => key.trim());
 		
-		if (providedKey !== c.env.OPENAI_API_KEY) {
+		if (!validKeys.includes(providedKey)) {
 			return c.json(
 				{
 					error: {
@@ -111,8 +114,63 @@ app.get('/health', (c) => {
 	return c.json({ 
 		status: 'ok', 
 		timestamp: new Date().toISOString(),
-		service: 'Qwen Worker'
+		service: 'Qwen Worker Multi-Account'
 	});
+});
+
+// Admin health check endpoint for multi-account status
+app.get('/admin/health', async (c) => {
+	// Require admin authentication
+	if (!c.env.ADMIN_SECRET_KEY) {
+		return c.json({ error: 'Admin endpoint not configured' }, 503);
+	}
+
+	const authHeader = c.req.header('Authorization');
+	if (!authHeader || !authHeader.startsWith('Bearer ')) {
+		return c.json({ error: 'Missing Authorization header' }, 401);
+	}
+
+	const providedKey = authHeader.substring(7);
+	if (providedKey !== c.env.ADMIN_SECRET_KEY) {
+		return c.json({ error: 'Invalid admin key' }, 401);
+	}
+
+	try {
+		const { MultiAccountAuthManager } = await import('./multi-auth');
+		const authManager = new MultiAccountAuthManager(c.env);
+		
+		const accountsHealth = await authManager.getAccountsHealth();
+		const failedAccounts = await authManager.getFailedAccounts();
+		
+		// Summary statistics
+		const totalAccounts = accountsHealth.length;
+		const healthyAccounts = accountsHealth.filter(a => a.status === 'healthy').length;
+		const failedAccountsCount = accountsHealth.filter(a => a.isFailed).length;
+		const quotaExceededAccounts = accountsHealth.filter(a => a.status === 'quota_exceeded').length;
+		const errorAccounts = accountsHealth.filter(a => a.status === 'error').length;
+		const missingCredentialsAccounts = accountsHealth.filter(a => a.status === 'missing_credentials').length;
+
+		return c.json({
+			summary: {
+				total_accounts: totalAccounts,
+				healthy_accounts: healthyAccounts,
+				failed_accounts: failedAccountsCount,
+				quota_exceeded_accounts: quotaExceededAccounts,
+				error_accounts: errorAccounts,
+				missing_credentials_accounts: missingCredentialsAccounts,
+				failed_accounts_list: failedAccounts
+			},
+			accounts: accountsHealth,
+			timestamp: new Date().toISOString()
+		});
+	} catch (error) {
+		console.error('Health check failed:', error);
+		return c.json({
+			error: 'Health check failed',
+			message: error instanceof Error ? error.message : 'Unknown error',
+			timestamp: new Date().toISOString()
+		}, 500);
+	}
 });
 
 export default app;
