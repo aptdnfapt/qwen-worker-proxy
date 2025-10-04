@@ -105,6 +105,9 @@ export class MultiAccountAuthManager {
 	private async refreshAccountToken(accountId: string, refreshToken: string): Promise<OAuth2Credentials> {
 		console.log(`Refreshing token for account ${accountId}...`);
 
+		// Load existing credentials to preserve fields not returned by refresh (e.g., resource_url)
+		const existingCreds = await this.loadAccountCredentials(accountId);
+
 		const response = await fetch('https://chat.qwen.ai/api/v1/oauth2/token', {
 			method: 'POST',
 			headers: {
@@ -131,7 +134,9 @@ export class MultiAccountAuthManager {
 			scope: tokenData.scope || '',
 			token_type: tokenData.token_type || 'Bearer',
 			id_token: tokenData.id_token || '',
-			expiry_date: Date.now() + tokenData.expires_in * 1000
+			expiry_date: Date.now() + tokenData.expires_in * 1000,
+			// Preserve or propagate API resource endpoint to avoid breaking account after refresh
+			resource_url: (tokenData.resource_url || (tokenData as any).endpoint || existingCreds?.resource_url)
 		};
 
 		// Store updated credentials in KV
