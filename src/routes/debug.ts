@@ -179,3 +179,56 @@ DebugRoute.get('/auth/test', async (c) => {
 		);
 	}
 });
+
+// Debug endpoint to check account credentials
+DebugRoute.get('/account/:accountId', async (c) => {
+	try {
+		const accountId = c.req.param('accountId');
+		console.log(`Checking account credentials for: ${accountId}`);
+		
+		// Load account credentials from KV
+		const credentials = await c.env.QWEN_TOKEN_CACHE.get(`ACCOUNT:${accountId}`, 'json') as Partial<import('../types').OAuth2Credentials> | null;
+		
+		if (!credentials) {
+			return c.json({
+				account: accountId,
+				status: 'not_found',
+				message: 'No credentials found for this account'
+			});
+		}
+		
+		const currentTime = Date.now();
+		const expiryTime = credentials.expiry_date || 0;
+		const timeUntilExpiry = expiryTime - currentTime;
+		const isExpired = timeUntilExpiry < 0;
+		
+		return c.json({
+			account: accountId,
+			status: 'found',
+				credentials: {
+					has_access_token: !!credentials.access_token,
+					has_refresh_token: !!credentials.refresh_token,
+					token_type: credentials.token_type,
+					expiry_date: credentials.expiry_date,
+					expiry_date_iso: new Date(expiryTime).toISOString(),
+					time_until_expiry_ms: timeUntilExpiry,
+					time_until_expiry_min: Math.floor(timeUntilExpiry / 60000),
+					is_expired: isExpired,
+					resource_url: credentials.resource_url
+				}
+		});
+	} catch (error) {
+		console.error('Error checking account credentials:', error);
+		
+		const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+		return c.json(
+			{
+				error: {
+					message: errorMessage,
+					type: 'account_check_error'
+				}
+			},
+			500
+		);
+	}
+});

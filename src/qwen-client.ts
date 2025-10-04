@@ -9,9 +9,9 @@ import { QWEN_API_BASE_URL, DEFAULT_MODEL } from './config';
 export class QwenAPIClient {
 	private authManager: MultiAccountAuthManager;
 
-	constructor(env: Env) {
-		this.authManager = new MultiAccountAuthManager(env);
-	}
+    constructor(env: Env, authManager?: MultiAccountAuthManager) {
+        this.authManager = authManager ?? new MultiAccountAuthManager(env);
+    }
 
 	/**
 	 * Get API endpoint from credentials, matching the working proxy exactly

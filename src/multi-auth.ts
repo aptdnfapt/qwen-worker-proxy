@@ -249,7 +249,7 @@ export class MultiAccountAuthManager {
 	 * Initialize authentication and select best account
 	 */
 	public async initializeAuth(): Promise<void> {
-		if (this.selectedAccount && this.selectedCredentials) {
+		if (this.selectedAccount && this.selectedCredentials && !this.forcedAccount) {
 			// Check if current credentials are still valid
 			const minutesLeft = (this.selectedCredentials.expiry_date - Date.now()) / 60000;
 			if (minutesLeft > 5) {
@@ -258,21 +258,45 @@ export class MultiAccountAuthManager {
 			}
 		}
 		
-		let selection;
 		if (this.forcedAccount) {
-			// Use forced account for health checks
 			console.log(`Using forced account: ${this.forcedAccount}`);
 			const forcedCredentials = await this.loadAccountCredentials(this.forcedAccount);
 			if (!forcedCredentials) {
 				throw new Error(`Forced account ${this.forcedAccount} not found in KV storage`);
 			}
-			selection = { accountId: this.forcedAccount, credentials: forcedCredentials };
-		} else {
-			// Select best account normally
-			selection = await this.selectBestAccount();
-			if (!selection) {
-				throw new Error('No valid accounts available. All accounts may be failed or expired.');
+
+			if (forcedCredentials.expiry_date < Date.now()) {
+				console.log(`Forced account ${this.forcedAccount} has expired token, attempting refresh...`);
+				if (forcedCredentials.refresh_token) {
+					try {
+						this.selectedCredentials = await this.refreshAccountToken(
+							this.forcedAccount,
+							forcedCredentials.refresh_token
+						);
+						this.selectedAccount = this.forcedAccount;
+						console.log(`Forced account ${this.forcedAccount} refresh successful`);
+						return;
+					} catch (refreshError) {
+						console.log(`Forced account ${this.forcedAccount} refresh failed:`, refreshError);
+					}
+				}
+
+				// Use expired credentials so health check captures the failure
+				this.selectedAccount = this.forcedAccount;
+				this.selectedCredentials = forcedCredentials;
+				return;
 			}
+
+			this.selectedAccount = this.forcedAccount;
+			this.selectedCredentials = forcedCredentials;
+			return;
+		}
+
+		let selection;
+		// Select best account normally
+		selection = await this.selectBestAccount();
+		if (!selection) {
+			throw new Error('No valid accounts available. All accounts may be failed or expired.');
 		}
 
 		// Handle expired accounts with proactive refresh
@@ -336,6 +360,11 @@ export class MultiAccountAuthManager {
 	 * Handle API response errors with account rotation
 	 */
 	public async handleApiError(error: any, retryCount: number = 0): Promise<{ shouldRetry: boolean; newAccount?: boolean }> {
+		if (this.forcedAccount) {
+			console.log(`Forced account ${this.forcedAccount} active; skipping rotation logic`);
+			return { shouldRetry: false };
+		}
+
 		if (!this.selectedAccount) {
 			return { shouldRetry: false };
 		}
@@ -394,6 +423,11 @@ export class MultiAccountAuthManager {
 	 * Switch to a different account (for retries)
 	 */
 	public async switchAccount(): Promise<boolean> {
+		if (this.forcedAccount) {
+			console.log('Forced account active; switchAccount skipped');
+			return false;
+		}
+
 		this.selectedAccount = null;
 		this.selectedCredentials = null;
 
@@ -474,9 +508,9 @@ export class MultiAccountAuthManager {
 				// Test through the actual proxy using QwenAPIClient
 				console.log(`Testing ${accountId} through proxy...`);
 				const { QwenAPIClient } = await import('./qwen-client');
-				const client = new QwenAPIClient(this.env);
+				const client = new QwenAPIClient(this.env, this);
 				
-				const testRequest = {
+				const testRequest: import('./types').ChatCompletionRequest = {
 					model: 'qwen3-coder-plus',
 					messages: [{ role: 'user', content: 'hi' }],
 					max_tokens: 5
@@ -484,17 +518,23 @@ export class MultiAccountAuthManager {
 
 				await client.chatCompletions(testRequest);
 				
+				// After successful test, get updated credentials to show correct expiry time
+				const updatedCredentials = await this.loadAccountCredentials(accountId);
+				const updatedExpiresIn = updatedCredentials ? 
+					(updatedCredentials.expiry_date < Date.now() ? 'expired' : `${Math.floor((updatedCredentials.expiry_date - Date.now()) / 60000)} min`)
+					: 'unknown';
+				
 				// If we get here, the request succeeded
 				results.push({
 					account: accountId,
 					status: 'healthy',
 					error: null,
-					expiresIn,
+					expiresIn: updatedExpiresIn, // Use updated expiry time
 					isFailed: failedAccounts.includes(accountId),
 					apiStatus: 200
 				});
 				
-				console.log(`✅ ${accountId}: HEALTHY`);
+				console.log(`✅ ${accountId}: HEALTHY (updated expiry: ${updatedExpiresIn})`);
 				
 			} catch (error) {
 				console.log(`❌ ${accountId}: ERROR - ${error instanceof Error ? error.message : 'Unknown error'}`);
