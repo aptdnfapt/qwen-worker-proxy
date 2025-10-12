@@ -300,6 +300,18 @@ export class QwenAPIClient {
 					object: 'model',
 					created: 1754686206,
 					owned_by: 'qwen'
+				},
+				{
+					id: 'qwen3-coder-flash',
+					object: 'model',
+					created: 1754686207,
+					owned_by: 'qwen'
+				},
+				{
+					id: 'vision-model',
+					object: 'model',
+					created: 1754686208,
+					owned_by: 'qwen'
 				}
 			]
 		};

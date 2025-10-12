@@ -14,7 +14,7 @@ import { DebugRoute } from './routes/debug';
  * - OAuth2 device flow authentication with automatic token refresh
  * - KV-based access token caching for performance
  * - Streaming and non-streaming response support
- * - Single model: qwen3-coder-plus
+ * - Multiple models: qwen3-coder-plus, qwen3-coder-flash, vision-model
  */
 
 // Create the main Hono app
@@ -104,7 +104,7 @@ app.get('/', (c) => {
 				auth_poll: '/v1/debug/auth/poll'
 			}
 		},
-		models: ['qwen3-coder-plus'],
+		models: ['qwen3-coder-plus', 'qwen3-coder-flash', 'vision-model'],
 		documentation: 'https://github.com/aptdnfapt/qwen-code-oai-proxy'
 	});
 });

@@ -1,6 +1,6 @@
 # Qwen Worker Proxy
 
-OpenAI-compatible API for Qwen's `qwen3-coder-plus` model deployed on Cloudflare Workers with **multi-account support**.
+OpenAI-compatible API for Qwen's models (`qwen3-coder-plus`, `qwen3-coder-flash`, `vision-model`) deployed on Cloudflare Workers with **multi-account support**.
 
 ## Overview
 
@@ -17,7 +17,7 @@ This project provides a Cloudflare Worker that acts as an OpenAI-compatible prox
 - ✅ **Automatic failover** on quota exhaustion or errors
 - ✅ OAuth2 authentication with automatic token refresh
 - ✅ Global edge deployment via Cloudflare Workers
-- ✅ Single model: `qwen3-coder-plus`
+- ✅ Multiple models: `qwen3-coder-plus`, `qwen3-coder-flash`, `vision-model`
 - ✅ Streaming support
 - ✅ Token usage tracking
 - ✅ KV-based token caching
@@ -145,6 +145,25 @@ curl -X POST https://your-worker.workers.dev/v1/chat/completions \
   }'
 ```
 
+### Using New Models
+```bash
+# Using qwen3-coder-flash
+curl -X POST https://your-worker.workers.dev/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen3-coder-flash",
+    "messages": [{"role": "user", "content": "Write hello world in Python"}]
+  }'
+
+# Using vision-model
+curl -X POST https://your-worker.workers.dev/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "vision-model",
+    "messages": [{"role": "user", "content": "Describe this image if you can see it"}]
+  }'
+```
+
 ### With API Key Authentication
 ```bash
 curl -X POST https://your-worker.workers.dev/v1/chat/completions \
@@ -154,6 +173,46 @@ curl -X POST https://your-worker.workers.dev/v1/chat/completions \
     "model": "qwen3-coder-plus",
     "messages": [{"role": "user", "content": "Explain recursion"}]
   }'
+```
+
+### Using Python OpenAI SDK
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url='https://your-worker.workers.dev/v1',
+    api_key='sk-your-api-key-here'
+)
+
+# Using qwen3-coder-plus
+response = client.chat.completions.create(
+    model='qwen3-coder-plus',
+    messages=[
+        {'role': 'user', 'content': 'Explain recursion'}
+    ]
+)
+
+print(response.choices[0].message.content)
+
+# Using qwen3-coder-flash
+response_flash = client.chat.completions.create(
+    model='qwen3-coder-flash',
+    messages=[
+        {'role': 'user', 'content': 'Explain recursion'}
+    ]
+)
+
+print(response_flash.choices[0].message.content)
+
+# Using vision-model
+response_vision = client.chat.completions.create(
+    model='vision-model',
+    messages=[
+        {'role': 'user', 'content': 'Describe this image if you can see it'}
+    ]
+)
+
+print(response_vision.choices[0].message.content)
 ```
 
 ## Local Development
